@@ -88,11 +88,12 @@ services:
     depends_on:
       - zookeeper
     ports:
-      - "${KAFKA_PORT}:9092"
+      - "${KAFKA_PORT_INTERNAL}:9092" # Docker 내부 통신용 (be-kakaon 컨테이너 → Kafka)
+      - "${KAFKA_PORT_EXTERNAL}:9093" # 호스트 접근용 (인텔리제이 → Kafka)
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # ✅ 수정: Docker 내부에서는 kafka, 외부에서는 localhost
+      # Docker 내부에서는 kafka, 외부에서는 localhost
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9093
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:9093
@@ -100,7 +101,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-    networks:  # ✅ 네트워크 추가
+    networks:
       - backend-net
 
 volumes:
