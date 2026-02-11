@@ -1,10 +1,10 @@
 package com.s310.kakaon.domain.fraud.detector;
 
-import static com.s310.kakaon.global.util.Util.generateAlertId;
 import com.s310.kakaon.domain.alert.dto.AlertEvent;
 import com.s310.kakaon.domain.alert.entity.AlertType;
 import com.s310.kakaon.domain.alert.repository.AlertRepository;
 import com.s310.kakaon.domain.payment.dto.PaymentEventDto;
+import com.s310.kakaon.domain.payment.dto.PaymentMethod;
 import com.s310.kakaon.domain.payment.entity.Payment;
 import com.s310.kakaon.domain.payment.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
@@ -17,11 +17,12 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
+import static com.s310.kakaon.global.util.Util.generateAlertId;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class DuplicatePaymentDetectorUsingDB implements FraudDetector{
-
+public class DuplicatePaymentDetectorUsingDBAndWhere implements FraudDetector{
     private final AlertRepository alertRepository;
     private final PaymentRepository paymentRepository;
 
@@ -36,38 +37,33 @@ public class DuplicatePaymentDetectorUsingDB implements FraudDetector{
         long startTime = System.nanoTime();
 
         // 필수 정보 없으면 탐지 스킵
-        if(event.getPaymentUuid() == null){
+        if (event.getPaymentUuid() == null) {
             return Collections.emptyList();
         }
 
-        // 전체 테이블 조회 (Full Table Scan)
-        List<Payment> allPayments = paymentRepository.findAll();
-
+        // 윈도우 시간 계산
         LocalDateTime windowStart = event.getApprovedAt().minusMinutes(windowMinutes);
+        LocalDateTime windowEnd = event.getApprovedAt();
 
-        // 메모리에서 필터링 (비효율적)
-        List<Payment> recentPayments = allPayments.stream()
-                .filter(p -> p.getStore() != null && p.getStore().getId().equals(event.getStoreId()))
-                .filter(p -> p.getPaymentMethod() != null &&
-                        p.getPaymentMethod().name().equals(event.getPaymentMethod()))
-                .filter(p -> p.getAmount() != null && p.getAmount().equals(event.getAmount()))
-                .filter(p -> p.getPaymentUuid() != null &&
-                        p.getPaymentUuid().equals(event.getPaymentUuid()))
-                .filter(p -> p.getApprovedAt() != null &&
-                        !p.getApprovedAt().isBefore(windowStart) &&
-                        !p.getApprovedAt().isAfter(event.getApprovedAt()))
-                .filter(p -> p.getStatus() != null &&
-                        p.getStatus().name().equals("APPROVED"))
-                .sorted(Comparator.comparing(Payment::getApprovedAt))
-                .toList();
+        // PaymentMethod Enum으로 변환
+        PaymentMethod paymentMethod = PaymentMethod.valueOf(event.getPaymentMethod());
+
+        // Full Table Scan + WHERE 절로 필터링
+        List<Payment> recentPayments = paymentRepository.findPaymentsUsingWhere(
+                event.getStoreId(),
+                paymentMethod,
+                event.getAmount(),
+                event.getPaymentUuid(),
+                windowStart,
+                windowEnd
+        );
 
         long endTime = System.nanoTime();
         double milliseconds = (endTime - startTime) / 1_000_000.0;
 
-        log.info("[DB] 중복 결제 탐지 소요 시간: {}ms (windowCount={}, totalScanned={})",
+        log.info("[DB-AND-WHERE] 중복 결제 탐지 소요 시간: {}ms (windowCount={})",
                 String.format("%.2f", milliseconds),
-                recentPayments.size(),
-                allPayments.size());
+                recentPayments.size());
 
         if (recentPayments.size() < thresholdCount) {
             return Collections.emptyList();
@@ -83,7 +79,7 @@ public class DuplicatePaymentDetectorUsingDB implements FraudDetector{
                 .map(Payment::getAuthorizationNo)
                 .toList();
 
-        log.info("[DETECTOR-V1] storeId={}, windowCount={}, paymentIdsInWindow={}",
+        log.info("[DETECTOR-DB-AND-WHERE] storeId={}, windowCount={}, paymentIdsInWindow={}",
                 event.getStoreId(), recentPayments.size(), paymentIdsInWindow);
 
         String description = String.format(
@@ -129,18 +125,12 @@ public class DuplicatePaymentDetectorUsingDB implements FraudDetector{
         return AlertType.REPEATED_PAYMENT;
     }
 
-    @Override
-    public void cleanup() {
-        log.debug("Redis TTL이 자동으로 만료 처리합니다.");
-    }
-
     private String generateGroupId(PaymentEventDto event, List<Payment> payments) {
-        return String.format("DUP-V1-%d-%s-%d-%s-%d",
+        return String.format("DUP-V2-%d-%s-%d-%s-%d",
                 event.getStoreId(),
                 event.getPaymentMethod(),
                 event.getAmount(),
                 event.getPaymentUuid(),
                 payments.get(0).getId());
     }
-
 }
