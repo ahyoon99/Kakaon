@@ -19,7 +19,7 @@ import java.util.*;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 @Slf4j
-@Component
+//@Component
 @RequiredArgsConstructor
 public class DuplicatePaymentDetector implements FraudDetector {
     private final AlertRepository alertRepository;

@@ -23,7 +23,7 @@ import java.util.UUID;
 import static com.s310.kakaon.global.util.Util.generateAlertId;
 
 @Slf4j
-@Component
+//@Component
 @RequiredArgsConstructor
 public class TransactionFrequencySpikeDetector implements FraudDetector {
     private final AlertRepository alertRepository;

@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 @Slf4j
-@Component
+//@Component
 @RequiredArgsConstructor
 public class SamePaymentMethodDetector implements FraudDetector {
     private final AlertRepository alertRepository;
