@@ -14,7 +14,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 import static com.s310.kakaon.global.util.Util.generateAlertId;
@@ -22,7 +21,7 @@ import static com.s310.kakaon.global.util.Util.generateAlertId;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class DuplicatePaymentDetectorUsingDBAndWhere implements FraudDetector{
+public class DuplicatePaymentDetectorUsingDBAndWhereAndIndex implements FraudDetector{
     private final AlertRepository alertRepository;
     private final PaymentRepository paymentRepository;
 
@@ -49,7 +48,7 @@ public class DuplicatePaymentDetectorUsingDBAndWhere implements FraudDetector{
         PaymentMethod paymentMethod = PaymentMethod.valueOf(event.getPaymentMethod());
 
         // Full Table Scan + WHERE 절로 필터링
-        List<Payment> recentPayments = paymentRepository.findPaymentsUsingWhere(
+        List<Payment> recentPayments = paymentRepository.findPaymentsUsingWhereAndIndex(
                 event.getStoreId(),
                 paymentMethod,
                 event.getAmount(),
@@ -61,7 +60,7 @@ public class DuplicatePaymentDetectorUsingDBAndWhere implements FraudDetector{
         long endTime = System.nanoTime();
         double milliseconds = (endTime - startTime) / 1_000_000.0;
 
-        log.info("[DB-AND-WHERE] 중복 결제 탐지 소요 시간: {}ms (windowCount={})",
+        log.info("[DB-AND-WHERE-INDEX] 중복 결제 탐지 소요 시간: {}ms (windowCount={})",
                 String.format("%.2f", milliseconds),
                 recentPayments.size());
 
@@ -79,7 +78,7 @@ public class DuplicatePaymentDetectorUsingDBAndWhere implements FraudDetector{
                 .map(Payment::getAuthorizationNo)
                 .toList();
 
-        log.info("[DETECTOR-DB-AND-WHERE] storeId={}, windowCount={}, paymentIdsInWindow={}",
+        log.info("[DETECTOR-DB-AND-WHERE-AND-INDEX] storeId={}, windowCount={}, paymentIdsInWindow={}",
                 event.getStoreId(), recentPayments.size(), paymentIdsInWindow);
 
         String description = String.format(

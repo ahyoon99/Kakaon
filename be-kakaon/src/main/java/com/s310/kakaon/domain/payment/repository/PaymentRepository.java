@@ -30,7 +30,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long>, Payment
         AND p.status = 'APPROVED'
         ORDER BY p.approvedAt ASC
         """)
-    List<Payment> findPaymentsUsingWhere(
+    List<Payment> findPaymentsUsingWhereAndIndex(
             @Param("storeId") Long storeId,
             @Param("paymentMethod") PaymentMethod paymentMethod,
             @Param("amount") Integer amount,
