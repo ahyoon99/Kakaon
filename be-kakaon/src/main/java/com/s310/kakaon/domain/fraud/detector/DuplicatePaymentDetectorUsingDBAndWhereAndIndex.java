@@ -19,7 +19,7 @@ import java.util.List;
 import static com.s310.kakaon.global.util.Util.generateAlertId;
 
 @Slf4j
-@Component
+//@Component
 @RequiredArgsConstructor
 public class DuplicatePaymentDetectorUsingDBAndWhereAndIndex implements FraudDetector{
     private final AlertRepository alertRepository;
