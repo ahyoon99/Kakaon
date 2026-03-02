@@ -131,7 +131,7 @@ public class AlertController {
     ) {
 
         Long memberId = memberService.getMemberByProviderId(kakaoId).getId();
-        PageResponse<AlertResponseDto> response = alertService.checkedAnomalyAlerts(memberId, storeId, pageable);
+        PageResponse<AlertResponseDto> response = alertService.checkedAnomalyAlerts(storeId, memberId, pageable);
         return ResponseEntity.status(HttpStatus.OK)
                 .body(ApiResponse.of(HttpStatus.OK, "모두 읽음 처리 성공", response, httpRequest.getRequestURI()));
     }
