@@ -2,6 +2,7 @@ package com.s310.kakaon.global.jwt;
 
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.SignatureAlgorithm;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -73,10 +74,11 @@ public class JwtTokenProvider {
     private String createToken(String kakaoId, String role, long validSeconds) {
         Instant now = Instant.now();
         JwtBuilder builder = Jwts.builder()
-                .subject(kakaoId)
-                .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plusSeconds(validSeconds)))
-                .signWith(secretKey, Jwts.SIG.HS256);
+                .setSubject(kakaoId)
+                .setIssuedAt(Date.from(now))
+                .setExpiration(Date.from(now.plusSeconds(validSeconds)))
+                .signWith(secretKey, SignatureAlgorithm.HS256);
+
         if(role != null) {
             builder.claim(ROLE_KEY, role);
         }
@@ -101,11 +103,11 @@ public class JwtTokenProvider {
     }
 
     public Claims parseClaims(String token) {
-        return Jwts.parser()
-                .verifyWith(this.secretKey)
+        return Jwts.parserBuilder()
+                .setSigningKey(this.secretKey)
                 .build()
-                .parseSignedClaims(token)
-                .getPayload();
+                .parseClaimsJws(token)
+                .getBody();
     }
 
     public String getSubject(String token) { return parseClaims(token).getSubject(); }
