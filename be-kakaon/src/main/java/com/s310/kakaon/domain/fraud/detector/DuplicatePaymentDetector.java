@@ -53,69 +53,68 @@ public class DuplicatePaymentDetector implements FraudDetector {
         }
 
         String redisKey = generateRedisKey(event);
+
+        long nowMillis = event.getApprovedAt()
+                .atZone(java.time.ZoneId.systemDefault())
+                .toInstant()
+                .toEpochMilli();
+
+        long windowStartMillis = event.getApprovedAt()
+                .minusMinutes(windowMinutes)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toInstant()
+                .toEpochMilli();
+
         long ttlMinutes = windowMinutes + TTL_BUFFER_MINUTES;
 
-        // 1) Redis에 현재 이벤트 저장
         try{
-            paymentEventRedisTemplate.execute(new SessionCallback<List<Object>>(){
-                @Override
-                public List<Object> execute(RedisOperations operations) throws DataAccessException {
-                    operations.multi();          // 트랜잭션 시작
-                    operations.opsForList().rightPush(redisKey, event);
-                    operations.expire(redisKey, Duration.ofMinutes(ttlMinutes));
-                    return operations.exec();   // 트랜잭션 커밋
-                }
-            });
+            // 1) 현재 이벤트 ZSET에 추가
+            paymentEventRedisTemplate.opsForZSet().add(redisKey, event, nowMillis);
+
+            // 2) 오래된 데이터 제거 (메모리 정리)
+            paymentEventRedisTemplate.opsForZSet().removeRangeByScore(redisKey, 0, windowStartMillis);
+
+            // 3) TTL 설정
+            paymentEventRedisTemplate.expire(redisKey, Duration.ofMinutes(ttlMinutes));
         } catch (Exception e){
-            log.warn("[REDIS-DUPLICATE-DETECTOR] Redis 장애로 탐지 스킵. key={}, error={}",
+            log.warn("[DUPLICATE-ZSET] Redis 장애로 탐지 스킵. key={}, error={}",
                     redisKey, e.getMessage());
             return Collections.emptyList();
         }
 
-        // 2) Redis 전체 데이터 조회 (이미 타입이 PaymentEventDto)
-        List<PaymentEventDto> rawList =
-                paymentEventRedisTemplate.opsForList().range(redisKey, 0, -1);
+        // 4) 윈도우 범위 데이터 조회 (정렬 불필요)
+        Set<PaymentEventDto> recentSet = paymentEventRedisTemplate.opsForZSet().rangeByScore(redisKey, windowStartMillis, nowMillis);
 
-        if (rawList == null || rawList.isEmpty()) {
+        if (recentSet == null || recentSet.isEmpty()) {
             return Collections.emptyList();
         }
-
-        LocalDateTime windowStart = event.getApprovedAt().minusMinutes(windowMinutes);
-
-        // 3) 윈도우(windowMinutes분)안에 들어오는 데이터만 필터링 + 정렬
-        // : TTL 버퍼 때문에 rawList에 windowMinutes보다 TTL_BUFFER_MINUTES분 오래된 데이터가 담겨져 있을 수 있기 때문
-        List<PaymentEventDto> recentList = rawList.stream()
-                .filter(p -> p.getApprovedAt() != null &&
-                        p.getApprovedAt().isAfter(windowStart))     // windowMinutes분 이내 데이터만
-                .sorted(Comparator.comparing(PaymentEventDto::getApprovedAt))   // 시간순 정렬
-                .toList();
 
         long endTime = System.nanoTime();
         double milliseconds = (endTime - startTime) / 1_000_000.0;
 
-        log.info("[REDIS-DUPLICATE-DETECTOR] 중복 결제 탐지 소요 시간: {}ms (key={}, windowCount={}, totalInRedis={})",
+        log.info("[DUPLICATE-ZSET] 탐지 소요 시간: {}ms (windowCount={})",
                 String.format("%.2f", milliseconds),
-                redisKey,
-                recentList.size(),
-                rawList.size());
+                recentSet.size());
 
-        // 4) 임계값 판단 - 정상인 경우, 빈 List를 리턴
-        if (recentList.size() < thresholdCount) {
+        // 5) 임계값 판단 - 정상인 경우, 빈 List를 리턴
+        if (recentSet.size() < thresholdCount) {
             return Collections.emptyList();
         }
 
         // 5) 이상거래 탐지된 경우, 관련 결제 정보 뽑아오기
-        // 6) 이상거래 결제건의 paymentId 뽑기
+        List<PaymentEventDto> recentList = new ArrayList<>(recentSet);
+
+        // 5-1) 이상거래 결제건의 paymentId 뽑기
         List<Long> paymentIdsInWindow = recentList.stream()
                 .map(PaymentEventDto::getPaymentId)
                 .toList();
 
-        // 7) 이상거래 결제건의 결제 승인번호(authorizationNo) 뽑기
+        // 5-2) 이상거래 결제건의 결제 승인번호(authorizationNo) 뽑기
         List<String> authNosInWindow = recentList.stream()
                 .map(PaymentEventDto::getAuthorizationNo)
                 .toList();
 
-        // 8) 알림 메시지 생성
+        // 6) 알림 메시지 생성
         String description = String.format(
                 "[중복 거래] 동일한 금액(%s원)과 결제수단(%s)으로 %d분 내 %d회 결제 발생\n" +
                         "- 가맹점: %s (매장ID: %s)\n" +
@@ -137,7 +136,7 @@ public class DuplicatePaymentDetector implements FraudDetector {
         log.info("[REDIS-DUPLICATE-DETECTOR] 이상거래 탐지 storeId={}, count={}, paymentIds={}",
                 event.getStoreId(), recentList.size(), paymentIdsInWindow);
 
-        // 9) AlertEvent 객체 생성
+        // 7) AlertEvent 객체 생성
         String groupId = generateGroupId(redisKey, recentList); // 이상거래 알림 식별자 생성 - "DUP-1-CARD-50000-abc123-101"
         AlertEvent alertEvent = AlertEvent.builder()
                 .groupId(groupId)
