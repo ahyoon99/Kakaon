@@ -1,9 +1,8 @@
 package com.s310.kakaon.global.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.s310.kakaon.domain.payment.dto.PaymentEventDto;
+import com.s310.kakaon.global.redis.DuplicatePaymentDetectionRedisTemplate;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -57,6 +56,29 @@ public class RedisConfig {
     }
 
     // 중복 결제 탐지용 Redis 저장소
+    @Bean
+    @Qualifier("duplicateDetectionRedisTemplate")
+    public DuplicatePaymentDetectionRedisTemplate duplicateDetectionRedisTemplate(
+            RedisConnectionFactory cf,
+            ObjectMapper objectMapper
+    ) {
+        DuplicatePaymentDetectionRedisTemplate template = new DuplicatePaymentDetectionRedisTemplate();
+        template.setConnectionFactory(cf);
+
+        StringRedisSerializer keySerializer = new StringRedisSerializer();
+        Jackson2JsonRedisSerializer<PaymentEventDto> valueSerializer =
+                new Jackson2JsonRedisSerializer<>(objectMapper, PaymentEventDto.class);
+
+        template.setKeySerializer(keySerializer);
+        template.setValueSerializer(valueSerializer);
+        template.setHashKeySerializer(keySerializer);
+        template.setHashValueSerializer(valueSerializer);
+
+        template.afterPropertiesSet();
+        return template;
+    }
+
+    //  동일 결제수단 원거리 사용 탐지, 거래 빈도 급증 탐지용 Redis 저장소
     @Bean
     @Qualifier("paymentEventRedisTemplate")
     public RedisTemplate<String, PaymentEventDto> paymentEventRedisTemplate(
