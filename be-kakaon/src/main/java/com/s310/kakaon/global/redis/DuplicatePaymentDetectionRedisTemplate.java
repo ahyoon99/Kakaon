@@ -24,7 +24,7 @@ public class DuplicatePaymentDetectionRedisTemplate extends RedisTemplate<String
     // → 명시적 캐스팅으로 타입 안전한 래퍼 메서드 제공
     private RedisSerializer<PaymentEventDto> valueSerializer(){
         @SuppressWarnings("unchecked")
-        RedisSerializer<PaymentEventDto> s = (RedisSerializer<PaymentEventDto>) getKeySerializer();
+        RedisSerializer<PaymentEventDto> s = (RedisSerializer<PaymentEventDto>) getValueSerializer();
         return s;
     }
 
